@@ -1,0 +1,326 @@
+#include <EEPROM.h>
+
+uint8_t OPT1_decimal[5000];
+uint8_t OPT2_decimal[5000];
+uint8_t time_log[5000];
+
+int upper = 23;
+int lower = 73;
+
+unsigned long time1 = 0;
+unsigned long time2 = 0;
+unsigned long time3 = 0;
+
+unsigned long elapsed_time = 0;
+
+unsigned long timea=0;
+unsigned long timeb=0;
+unsigned long timec=0;
+unsigned long time_start = 0;
+unsigned long time_finish = 0;
+
+int over_under = 1;
+int OVER_UNDER = 4;
+
+int trial_number = 0;
+int TRIAL_MAX = 300;
+
+int read_time = 100;
+int REPORT_TIME = 300;
+int query_time = 100;
+int QUIT_TIME = 500;
+
+int greater_than = 1;
+int less_than = 1;
+
+int OPT1 = 15;
+int OPT2 = 21;
+int OPT1_read = 0;
+int OPT2_read = 0;
+int OPT1_min = 128;
+int OPT1_max = 0;
+int OPT2_min = 128;
+int OPT2_max = 0;
+
+int A1read = 0;
+int A7read = 0;
+
+int LEFT = 14;
+int RIGHT = 16;
+int BUTTON = 17;
+int CANCEL = 20;
+int external_trigger = 0;
+int no_interrupt = 0;
+int LEFT_read = 0;
+int RIGHT_read = 0;
+int BUTTON_read = 0;
+int CANCEL_read = 0;
+
+int player=2;
+int mode = 0;
+int cursor_position = 0;
+
+int current_button = 0;
+int last_button = 0;
+
+char ALPHABET[] = {'A','B','C','D','E','F','G','H','I','J','K','L','M'};
+char alphabet[] = {'a','b','c','d','e','f','g','h','i','j','k','l','m'};
+
+int OUTPUT_ON_TIME[] = {-1,100,-1,-1,-1,-1,-1,-1,-1,-1,100,101,100};
+int output_off_time[] = {0,200,0,0,0,0,0,0,0,0,50,50,200};
+int OUTPUT_BUTTONS[]={11,10,9,8,7,5,6,3,4,2,14,16,17};
+
+char serial_names[] = {'t','T','w','W','r','R','q','Q','o','O','+','-','A','B','C','D','E','F','G','H','I','J','K','L','M','a','b','c','d','e','f','g','h','i','j','k','l','m','p'};
+//int *pointers[] = {&a,&b,&c};
+int min_list[] = {0,0,1,1,0,0,0,0,0,0,0,0,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,1};
+int max_list[] = {999,999,99,99,999,999,999,999,999,999,1,1,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,999,2};
+int *pointers[] = { &trial_number, &TRIAL_MAX, &upper, &lower, &read_time, &REPORT_TIME, &query_time, &QUIT_TIME, &over_under, &OVER_UNDER,  &greater_than, &less_than,
+&OUTPUT_ON_TIME[0], &OUTPUT_ON_TIME[1], &OUTPUT_ON_TIME[2], &OUTPUT_ON_TIME[3], &OUTPUT_ON_TIME[4], &OUTPUT_ON_TIME[5], &OUTPUT_ON_TIME[6], 
+&OUTPUT_ON_TIME[7], &OUTPUT_ON_TIME[8], &OUTPUT_ON_TIME[9], &OUTPUT_ON_TIME[10], &OUTPUT_ON_TIME[11], &OUTPUT_ON_TIME[12], 
+&output_off_time[0], &output_off_time[1], &output_off_time[2], &output_off_time[3], &output_off_time[4], &output_off_time[5], &output_off_time[6], 
+&output_off_time[7], &output_off_time[8], &output_off_time[9], &output_off_time[10], &output_off_time[11], &output_off_time[12], &player
+};
+
+int length_array = sizeof(serial_names)/sizeof(serial_names[0]);
+
+
+int OUTPUT_PRESSED = 0;
+int OUTPUT_RELEASED = 1;
+//11 u, 10 d, 9 l, 8 r, 7 1P, 6 3P, 5 2P, 4 2K, 3 1K, 2 3K. 
+//usb controller 1P 3, 2P 4, 3P 6, 4P 5, 1K 1, 2K 2, 3K z axis - , 4k z axis +
+//for Brook pins, HIGH is unpressed, LOW is pressed
+
+void EEPROM_WRITE(int _position, int _variable){
+  EEPROM.update(_position, abs(_variable)/100);
+  EEPROM.update(_position+1,abs(_variable)%100);
+  if (_variable < 0){EEPROM.update(_position+2,1);}//flag for negative values
+  EEPROM.update(_position+3,1);//use this to confirm data has been written
+}
+
+int EEPROM_READ(int _position, int _variable){
+  int result = _variable;
+  if (EEPROM.read(_position + 3)==1){//use this to only update if data has been written previously
+  result = 100*EEPROM.read(_position) + EEPROM.read(_position+1);
+  if (EEPROM.read(_position+2) == 1){result = -1*result;}}
+  return result;
+}
+
+void EEPROM_RESET(){
+  for (int i = 0; i<length_array*5;i++)
+  EEPROM.update(i,255);
+}
+
+void SAVE_ALL_EEPROM(){//can simplify this
+for (int i = 0;i<length_array;i++){
+EEPROM_WRITE(5*i,*pointers[i]);
+}}
+
+void turn_off_buttons(){
+  if (cursor_position > 0){
+    
+    for (int i = 0;i<13;i++){
+    if (output_off_time[i] >= 0){digitalWrite(OUTPUT_BUTTONS[i],HIGH);}
+    if (output_off_time[i] < 0){digitalWrite(OUTPUT_BUTTONS[i],LOW);}
+  }}
+  if (cursor_position == 0){
+    for (int i = 0;i<13;i++){
+    digitalWrite(OUTPUT_BUTTONS[i],HIGH);}
+  }
+}
+
+void setColorBGR(int _blue, int _green, int _red){
+  digitalWrite(LEDB, _blue);
+  digitalWrite(LEDG, _green);
+  digitalWrite(LEDR, _red);
+}
+
+void reset_all_values(){  
+  trial_number = 0;
+  for (int i = 0; i<5000;i++){OPT1_decimal[i]=0; OPT2_decimal[i]=0;time_log[i]=0;}
+}
+
+void reset_OPT_values(){OPT1_min=128;OPT1_max=0;OPT2_min=128;OPT2_max=0;}
+
+void setup() {
+//Serial.begin(2000000);
+  Serial.begin(115200);
+  Serial.setTimeout(100);delay(1000);
+
+  pinMode(LEDB,OUTPUT);
+  pinMode(LEDG,OUTPUT);
+  pinMode(LEDR,OUTPUT);
+  
+  for (int i =0;i<length_array;i++){
+    *pointers[i] = EEPROM_READ(i*5,*pointers[i]);
+  }
+  trial_number = 0;
+  SAVE_ALL_EEPROM();
+
+  for (int i = 0; i<5000;i++){OPT1_decimal[i]=0;OPT2_decimal[i]=0;time_log[i]=0;}
+ 
+  pinMode(11,OUTPUT);digitalWrite(11,HIGH);
+  pinMode(10,OUTPUT);digitalWrite(10,HIGH);
+  pinMode(9,OUTPUT);digitalWrite(9,HIGH);
+  pinMode(8,OUTPUT);digitalWrite(8,HIGH);
+  pinMode(7,OUTPUT);digitalWrite(7,HIGH);
+  pinMode(6,OUTPUT);digitalWrite(6,HIGH);
+  pinMode(5,OUTPUT);digitalWrite(5,HIGH);
+  pinMode(4,OUTPUT);digitalWrite(4,HIGH);
+  pinMode(3,OUTPUT);digitalWrite(3,HIGH);
+  pinMode(2,OUTPUT);digitalWrite(2,HIGH);
+  
+  pinMode(A0,INPUT_PULLUP);
+  pinMode(A2,INPUT_PULLUP);
+  pinMode(A3,INPUT_PULLUP);
+  pinMode(A6,INPUT_PULLUP);
+
+  pinMode(A1,INPUT);
+  pinMode(A7,INPUT);
+
+}
+
+
+void loop() {
+
+  time1=micros()/100;
+  if ((time1)!=(time2)){
+    elapsed_time = (time1-time3);  
+    if (digitalRead(CANCEL) == 0){current_button = 1;mode = 0;}
+
+  if (mode == 1){
+    timea=micros();
+    OPT1_decimal[elapsed_time] = analogRead(OPT1)/8;
+    OPT2_decimal[elapsed_time] = analogRead(OPT2)/8;
+    
+
+    for (int i = 0; i<13;i++){
+      if (elapsed_time/10 == OUTPUT_ON_TIME[i]){digitalWrite(OUTPUT_BUTTONS[i],LOW);}
+      if (elapsed_time/10 == output_off_time[i]){digitalWrite(OUTPUT_BUTTONS[i],HIGH);}
+          //for Brook pins, HIGH is unpressed, LOW is pressed
+    }
+
+    if (elapsed_time/10 < read_time){
+      if (OPT1_decimal[elapsed_time]<OPT1_min){OPT1_min = OPT1_decimal[elapsed_time];}
+      if (OPT1_decimal[elapsed_time]>OPT1_max){OPT1_max = OPT1_decimal[elapsed_time];}
+      if (OPT2_decimal[elapsed_time]<OPT2_min){OPT2_min = OPT1_decimal[elapsed_time];}
+      if (OPT2_decimal[elapsed_time]>OPT2_max){OPT2_max = OPT1_decimal[elapsed_time];}
+      }
+
+    if (elapsed_time/10 > read_time){
+      if (greater_than == 1){
+        if (OPT1_decimal[elapsed_time]>OPT1_max+over_under){digitalWrite(LEDG,1);digitalWrite(LEDB,0);}
+        if (player==2){if (OPT2_decimal[elapsed_time]>OPT2_max+over_under){digitalWrite(LEDG,1);digitalWrite(LEDR,0);}}
+      }
+      if (less_than == 1){
+      if ((OPT1_decimal[elapsed_time]<OPT1_min-over_under) && (OPT1_decimal[elapsed_time]!=0)){digitalWrite(LEDG,1);digitalWrite(LEDB,0);}     
+      if (player==2){if ((OPT2_decimal[elapsed_time]<OPT2_min-over_under) && (OPT1_decimal[elapsed_time]!=0)){digitalWrite(LEDG,1);digitalWrite(LEDR,0);}}
+    }
+      }
+   
+
+    if (elapsed_time/10 == read_time){setColorBGR(1,0,1);}
+    //if (elapsed_time/10 == query_time){setColorBGR(0,128,0);}
+    if (elapsed_time/10 == REPORT_TIME){setColorBGR(0,0,1);}
+    if (elapsed_time/10 == QUIT_TIME){setColorBGR(1,1,1);}
+
+    if (elapsed_time/10 == REPORT_TIME){
+      Serial.print("t");Serial.println(trial_number);
+      Serial.setTimeout(300);      
+      
+      time_start = millis();
+      if (player == 2){        
+        Serial.print("v");for (int i = 0; i<read_time*10; i++){Serial.print(OPT2_decimal[i]);Serial.print(",");}Serial.println();
+        Serial.print("V");for (int i = read_time*10; i<REPORT_TIME*10; i++){Serial.print(OPT2_decimal[i]);Serial.print(",");}Serial.println();}
+      
+      Serial.print("u");for (int i = 0; i<read_time*10; i++){Serial.print(OPT1_decimal[i]);Serial.print(",");}Serial.println();        
+      Serial.print("U");for (int i = read_time*10; i<REPORT_TIME*10; i++){Serial.print(OPT1_decimal[i]);Serial.print(",");}Serial.println();
+      time_finish = millis();
+
+      //Serial.print("x");for (int i = 0; i<read_time*10; i++){Serial.print(time_log[i]);Serial.print(",");}Serial.println();
+      //Serial.print("X");for (int i = read_time*10; i<REPORT_TIME*10; i++){Serial.print(time_log[i]);Serial.print(",");}Serial.println();
+      Serial.print("X");Serial.println(time_finish-time_start);
+
+
+      Serial.setTimeout(5);
+      trial_number=trial_number+1;}
+
+    if (elapsed_time/10 >= QUIT_TIME){
+      if (cursor_position == 1){reset_OPT_values();mode = 0;}
+      if (cursor_position == 2){reset_OPT_values();time3=1+micros()/100;}
+      if (cursor_position == 3){reset_OPT_values();time3=1+micros()/100;}
+      if (trial_number == TRIAL_MAX){mode = 0;}
+      }
+  timeb=micros();
+  timec=timeb-timea;if (elapsed_time < 5000){time_log[elapsed_time]=timec;}  
+
+  }
+
+   if (mode == 4){
+    for (int i = 0; i<13;i++){
+      if (elapsed_time/10 == OUTPUT_ON_TIME[i]){digitalWrite(OUTPUT_BUTTONS[i],LOW);}
+      if (elapsed_time/10 == output_off_time[i]){digitalWrite(OUTPUT_BUTTONS[i],HIGH);}}
+      
+    if (elapsed_time/10 == REPORT_TIME){mode = 0;}
+   }
+
+  if (mode == 0){
+    current_button=0;
+
+    if (digitalRead(LEFT) == 0){current_button = 4;}
+    if (digitalRead(RIGHT) == 0){current_button = 6;}
+    if (digitalRead(BUTTON) == 0){current_button = 5;}
+    if (digitalRead(CANCEL) == 0){current_button = 1;mode = 0;}
+    
+    setColorBGR(1,1,1);
+    turn_off_buttons();
+
+    if (!Serial.available());{char abc = Serial.read();
+      for (int i=0;i<length_array;i++){/////check this length is right 
+        if (abc == serial_names[i]){*pointers[i]=Serial.parseInt();
+        if ((less_than == 0) && (greater_than == 0)){less_than = 1;greater_than = 1;}
+        Serial.print(serial_names[i]);Serial.println(*pointers[i]);
+        SAVE_ALL_EEPROM();}
+      }
+
+      if (abc == 'n'){external_trigger = Serial.parseInt();
+      if (external_trigger == 0){cursor_position = 0;}
+      if (external_trigger == 1){cursor_position=1;}
+      if (external_trigger == 2){cursor_position=2;}
+      if (external_trigger == 3){cursor_position=3;}
+      if (external_trigger == 4){cursor_position=4;}
+      external_trigger = 0;}
+
+      if (abc == 'N'){external_trigger = Serial.parseInt();
+      if (external_trigger == 0){cursor_position = 0;}
+      if ((external_trigger == 1) && (trial_number < TRIAL_MAX)){reset_OPT_values();cursor_position=1;time3=1+micros()/100;mode = 1;}
+      if ((external_trigger == 2) && (trial_number < TRIAL_MAX)){reset_OPT_values();cursor_position=2;time3=1+micros()/100;mode = 1;}
+      if ((external_trigger == 3) && (trial_number < TRIAL_MAX)){reset_OPT_values();cursor_position=3;time3=1+micros()/100;mode = 1;}
+      if  (external_trigger == 4) {cursor_position=4;time3=1+micros()/100;mode = 4;}
+      external_trigger = 0;}
+
+
+      if (abc == 'S'){
+          for (int i = 0; i<length_array;i++){
+          Serial.print(serial_names[i]);Serial.println(*pointers[i]);
+          }Serial.println("S");
+    }}
+          
+    if ((current_button == 4) && (last_button == 0)){cursor_position = max(0,cursor_position-1);Serial.print("n");Serial.println(cursor_position);}
+    if ((current_button == 6) && (last_button == 0)){cursor_position = min(4,cursor_position+1);Serial.print("n");Serial.println(cursor_position);}
+  
+    if ((current_button == 5) && (last_button == 0) && (cursor_position == 0)){EEPROM_RESET();
+                                  reset_all_values();last_button = 5;cursor_position=1;mode = 0;}
+    
+    if ((current_button == 5) && (last_button == 0) && (trial_number < TRIAL_MAX) && (cursor_position == 1)){reset_OPT_values();time3=1+micros()/100;mode = 1;}
+    
+    if ((current_button == 5) && (last_button == 0) && (trial_number < TRIAL_MAX) && (cursor_position == 2)){reset_OPT_values();time3=1+micros()/100;mode = 1;}
+    
+    if ((current_button == 5) && (last_button == 0) && (trial_number < TRIAL_MAX) && (cursor_position == 3)){reset_OPT_values();time3=1+micros()/100;mode = 1;}
+
+    if ((current_button == 5) && (last_button == 0) && (cursor_position == 4)){time3=1+micros()/100;mode = 4;}
+
+  }
+    
+  last_button=current_button;
+  time2=micros()/100;
+  }}
